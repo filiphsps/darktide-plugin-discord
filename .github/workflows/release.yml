@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Get current version
+        id: current_version
+        shell: pwsh
+        run: |
+          [xml]$csproj = Get-Content DarktideDiscord.csproj
+          $version = $csproj.Project.PropertyGroup.Version
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Calculate new version
+        id: new_version
+        shell: pwsh
+        run: |
+          $current = "${{ steps.current_version.outputs.version }}"
+          $parts = $current.Split('.')
+          $major = [int]$parts[0]
+          $minor = [int]$parts[1]
+          $patch = [int]$parts[2]
+
+          switch ("${{ inputs.version_bump }}") {
+            "major" { $major++; $minor = 0; $patch = 0 }
+            "minor" { $minor++; $patch = 0 }
+            "patch" { $patch++ }
+          }
+
+          $newVersion = "$major.$minor.$patch"
+          echo "version=$newVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Update version in csproj
+        shell: pwsh
+        run: |
+          $content = Get-Content DarktideDiscord.csproj -Raw
+          $content = $content -replace '<Version>.*</Version>', '<Version>${{ steps.new_version.outputs.version }}</Version>'
+          Set-Content DarktideDiscord.csproj -Value $content -NoNewline
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish
+        run: dotnet publish -c Release
+
+      - name: Generate changelog
+        id: changelog
+        shell: pwsh
+        run: |
+          $lastTag = git describe --tags --abbrev=0 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            $commits = git log --pretty=format:"- %s (%h)" --no-merges
+          } else {
+            $commits = git log --pretty=format:"- %s (%h)" --no-merges "$lastTag..HEAD"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($commits)) {
+            $commits = "- No changes since last release"
+          }
+
+          # Write to file for multi-line support
+          $changelog = "## What's Changed`n`n$commits"
+          Set-Content -Path changelog.md -Value $changelog
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit version bump
+        run: |
+          git add DarktideDiscord.csproj
+          git commit -m "chore: bump version to ${{ steps.new_version.outputs.version }}"
+          git push
+
+      - name: Create and push tag
+        run: |
+          git tag -a "v${{ steps.new_version.outputs.version }}" -m "Release v${{ steps.new_version.outputs.version }}"
+          git push origin "v${{ steps.new_version.outputs.version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.new_version.outputs.version }}
+          name: v${{ steps.new_version.outputs.version }}
+          body_path: changelog.md
+          files: |
+            bin/Release/net8.0/win-x64/publish/DarktideDiscord.dll
+          draft: false
+          prerelease: false

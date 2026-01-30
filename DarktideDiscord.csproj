@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Version -->
+    <Version>1.0.0</Version>
+
+    <!-- NativeAOT publishing for native DLL -->
+    <PublishAot>true</PublishAot>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+    <!-- Strip symbols in release -->
+    <StripSymbols>true</StripSymbols>
+    <DebugType>none</DebugType>
+
+    <!-- Optimize for size -->
+    <OptimizationPreference>Size</OptimizationPreference>
+    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <IlcTrimMetadata>true</IlcTrimMetadata>
+  </PropertyGroup>
+
+</Project>
